@@ -1,6 +1,7 @@
 // Assets/Editor/PlaymodeManualApplyTool.cs
 // Records ONLY manual playmode edits (Undo-driven) + manually added components,
-// and applies them back to Edit Mode.
+// clears the list at the start of each Play session,
+// and applies changes back to Edit Mode.
 
 #if UNITY_EDITOR
 using System;
@@ -34,6 +35,9 @@ public class PlaymodeManualApplyTool : EditorWindow
     {
         public bool recordingEnabled = true;
         public List<ObjectRecord> records = new List<ObjectRecord>();
+
+        // NEW: reset list automatically at each Play session start (default true)
+        public bool resetOnPlay = true;
     }
 
     private const string SessionKey = "PlaymodeManualApplyTool_RecordStore_JSON";
@@ -65,7 +69,6 @@ public class PlaymodeManualApplyTool : EditorWindow
 
     private void OnExternalRecordChanged()
     {
-        // Reload whenever recorder signals changes (including after play transitions)
         _store = null;
         LoadStore();
         Repaint();
@@ -79,9 +82,9 @@ public class PlaymodeManualApplyTool : EditorWindow
         EditorGUILayout.LabelField("Playmode Manual Apply", EditorStyles.boldLabel);
 
         EditorGUILayout.HelpBox(
-            "This tool records ONLY manual edits made in Play Mode that go through Undo (Inspector edits, gizmo moves) " +
+            "Records ONLY manual edits made in Play Mode that go through Undo (Inspector edits, gizmo moves) " +
             "and components added via the Add Component button.\n\n" +
-            "It intentionally does NOT detect automatic/script-driven movement (unless a script uses Undo, which is uncommon).",
+            "It intentionally does NOT detect automatic/script-driven movement (unless a script uses Undo).",
             MessageType.Info);
 
         EditorGUI.BeginChangeCheck();
@@ -92,12 +95,21 @@ public class PlaymodeManualApplyTool : EditorWindow
             RecorderHooks.NotifyChanged();
         }
 
+        EditorGUI.BeginChangeCheck();
+        _store.resetOnPlay = EditorGUILayout.ToggleLeft("Reset list at the start of each Play session", _store.resetOnPlay);
+        if (EditorGUI.EndChangeCheck())
+        {
+            SaveStore();
+            RecorderHooks.NotifyChanged();
+        }
+
         EditorGUILayout.Space(8);
 
-        // === TOP CONTROLS (as requested) ===
+        // === TOP CONTROLS ===
         using (new EditorGUILayout.HorizontalScope())
         {
             GUI.enabled = !EditorApplication.isPlaying && (_store.records?.Count > 0);
+
             if (GUILayout.Button("Apply All", GUILayout.Height(30)))
                 ApplyAll();
 
@@ -108,7 +120,6 @@ public class PlaymodeManualApplyTool : EditorWindow
         }
 
         EditorGUILayout.Space(10);
-
         DrawRecords();
     }
 
@@ -142,7 +153,6 @@ public class PlaymodeManualApplyTool : EditorWindow
                 EditorGUILayout.LabelField(rec.objectName, EditorStyles.boldLabel);
                 EditorGUILayout.LabelField($"Components captured: {rec.components?.Count ?? 0}", EditorStyles.miniLabel);
 
-                // Per-object controls: Apply / Discard (as requested)
                 using (new EditorGUILayout.HorizontalScope())
                 {
                     GUI.enabled = !EditorApplication.isPlaying;
@@ -157,12 +167,10 @@ public class PlaymodeManualApplyTool : EditorWindow
 
                     GUILayout.FlexibleSpace();
 
-                    // Optional: ping
                     if (GUILayout.Button("Ping", GUILayout.Width(90)))
                         PingInEditMode(rec);
                 }
 
-                // Component list (nice to see what was captured)
                 if (rec.components != null && rec.components.Count > 0)
                 {
                     EditorGUILayout.Space(4);
@@ -281,7 +289,6 @@ public class PlaymodeManualApplyTool : EditorWindow
             Component component = go.GetComponent(type);
             if (component == null)
             {
-                // If it was added in play, recreate it in edit mode (also safe if missing).
                 component = Undo.AddComponent(go, type);
             }
 
@@ -400,8 +407,18 @@ public class PlaymodeManualApplyTool : EditorWindow
 
         private static void OnPlayModeStateChanged(PlayModeStateChange state)
         {
-            // This makes the list refresh after each play session transition.
-            // EnteredEditMode happens right after exiting play.
+            // IMPORTANT: Reset list at the start of each Play session
+            if (state == PlayModeStateChange.EnteredPlayMode)
+            {
+                var store = LoadStore();
+                if (store.resetOnPlay)
+                {
+                    store.records?.Clear();
+                    SaveStore(store);
+                }
+            }
+
+            // Refresh UI after transitions
             NotifyChanged();
         }
 
@@ -420,7 +437,6 @@ public class PlaymodeManualApplyTool : EditorWindow
                 var go = TargetToGameObject(target);
                 if (go == null) continue;
 
-                // Only capture relevant targets:
                 if (!IsRelevantTarget(target)) continue;
 
                 CaptureSnapshot(store, go, target, addedInPlay: false);
@@ -441,7 +457,6 @@ public class PlaymodeManualApplyTool : EditorWindow
 
             if (c == null || c.gameObject == null) return;
 
-            // Record any MonoBehaviour or relevant rendering/collider components
             if (!IsRelevantComponent(c)) return;
 
             CaptureSnapshot(store, c.gameObject, c, addedInPlay: true);
@@ -453,11 +468,11 @@ public class PlaymodeManualApplyTool : EditorWindow
 
         private static bool IsRelevantTarget(UnityEngine.Object target)
         {
-            if (target is Transform) return true;          // includes RectTransform
-            if (target is Collider) return true;           // all collider types
+            if (target is Transform) return true;     // includes RectTransform
+            if (target is Collider) return true;      // all collider types
             if (target is MeshRenderer) return true;
             if (target is MeshFilter) return true;
-            if (target is MonoBehaviour) return true;      // scripts changed manually in inspector
+            if (target is MonoBehaviour) return true; // scripts changed manually in inspector
             return false;
         }
 
@@ -482,11 +497,10 @@ public class PlaymodeManualApplyTool : EditorWindow
         {
             if (store.records == null) store.records = new List<ObjectRecord>();
 
-            // FIX: Use GetGlobalObjectIdSlow (works in more Unity versions)
             var gid = GlobalObjectId.GetGlobalObjectIdSlow(go);
-
-            // If gid cannot be resolved properly, it often stringifies empty/invalid.
             var gidStr = gid.ToString();
+
+            // Basic invalid check (varies by Unity version but this prevents empty ids)
             if (string.IsNullOrEmpty(gidStr) || gidStr.Contains("00000000000000000000000000000000"))
                 return;
 
