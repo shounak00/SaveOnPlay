@@ -60,9 +60,7 @@ All collider fields are captured through serialized data.
 
 Click below to watch the demo:
 
-[▶ Watch Demo Video](PASTE_YOUR_VIDEO_LINK_HERE)
-
-> Replace `PASTE_YOUR_VIDEO_LINK_HERE` with your YouTube / Google Drive / GitHub video link.
+[▶ Watch Demo Video](https://www.linkedin.com/posts/shounak00_unity-gamedev-xr-activity-7428225860488531969-U1K9)
 
 ---
 
