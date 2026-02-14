@@ -97,7 +97,7 @@ The list automatically updates after each Play session.
 
 ## 📦 Import as Unity Package (Recommended)
 
-For convenience, this repository includes a ready-to-import **Unity Package**, so you can install the tool instantly without manually copying files.
+For convenience, this repository includes a ready-to-import **Unity Package**, so you can install the tool instantly without manually copying files. [Its here](https://github.com/shounak00/SaveOnPlay/tree/main/PackageToImport)
 
 ### ✅ Option 1: Import `.unitypackage`
 1. Download the included package file:
